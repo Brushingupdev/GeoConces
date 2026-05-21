@@ -797,10 +797,10 @@ function ExpedienteSection({ concessionId, hasPdf }: {
 
         {/* Barra de progreso real */}
         <div className="mb-4">
-          {progress?.total > 0 ? (
+          {(progress?.total ?? 0) > 0 ? (
             <>
               <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-                <span>Página {progress.page} de {progress.total}</span>
+                <span>Página {progress?.page} de {progress?.total}</span>
                 <span>{pct}%</span>
               </div>
               <div className="h-2 w-full rounded-full bg-violet-100 overflow-hidden">

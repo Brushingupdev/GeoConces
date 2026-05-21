@@ -1,7 +1,7 @@
 "use client";
 
 import { Marker, Popup } from "react-leaflet";
-import L, { type Icon } from "leaflet";
+import L from "leaflet";
 import ConcessionPopup from "@/components/maps/ConcessionPopup";
 import type { ConcessionMapFeature } from "@/types/concessions";
 
@@ -13,7 +13,7 @@ const STATUS_HEX: Record<string, string> = {
   suspended: "#6b7280",
 };
 
-function makeIcon(color: string, selected = false): Icon {
+function makeIcon(color: string, selected = false): L.DivIcon {
   const size = selected ? 14 : 10;
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${size * 2}" height="${size * 2}">
@@ -36,7 +36,7 @@ export default function ConcessionLayer({
   selectedId,
 }: {
   features: ConcessionMapFeature[];
-  icon?: Icon; // kept for compatibility, unused
+  icon?: L.Icon | L.DivIcon; // kept for compatibility, unused
   onSelect: (feature: ConcessionMapFeature) => void;
   selectedId?: number | null;
 }) {

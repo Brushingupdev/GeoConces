@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import tailwindAnimate from "tailwindcss-animate";
 
 const config: Config = {
   content: [
@@ -12,9 +13,47 @@ const config: Config = {
         sans:  ["var(--font-inter)", "system-ui", "sans-serif"],
         serif: ["var(--font-serif)", "Georgia", "serif"],
       },
+      borderRadius: {
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
+      },
       colors: {
-        /* Malaquita — color de mineral de cobre, identidad de marca */
+        /* ── shadcn/ui tokens ── */
+        background:  "hsl(var(--background))",
+        foreground:  "hsl(var(--foreground))",
+        card: {
+          DEFAULT:    "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
+        },
+        popover: {
+          DEFAULT:    "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
+        },
+        secondary: {
+          DEFAULT:    "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
+        muted: {
+          DEFAULT:    "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
+        },
+        accent: {
+          DEFAULT:    "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
+        },
+        destructive: {
+          DEFAULT:    "hsl(var(--destructive))",
+          foreground: "hsl(var(--destructive-foreground))",
+        },
+        border: "hsl(var(--border))",
+        input:  "hsl(var(--input))",
+        ring:   "hsl(var(--ring))",
+
+        /* ── Brand colors ── */
         primary: {
+          DEFAULT:    "hsl(var(--primary))",        /* #145a55 */
+          foreground: "hsl(var(--primary-foreground))",
           50:  "#eef8f7",
           100: "#d6efeb",
           200: "#b5e0db",
@@ -27,7 +66,6 @@ const config: Config = {
           900: "#123c3a",
           950: "#0b2826",
         },
-        /* Cobre — acento mineral, CTAs secundarios, highlights */
         copper: {
           50:  "#fdf6ed",
           100: "#f9e8d0",
@@ -41,7 +79,6 @@ const config: Config = {
           900: "#5a3016",
           950: "#321809",
         },
-        /* Tierra — fondos cálidos, secciones neutras */
         earth: {
           50:  "#faf7f2",
           100: "#f2ede4",
@@ -58,7 +95,7 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [tailwindAnimate],
 };
 
 export default config;
