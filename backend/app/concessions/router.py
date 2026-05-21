@@ -433,16 +433,26 @@ def trigger_expediente_pdf(
 @router.get("/{concession_id}/expediente/pdf")
 def serve_expediente_pdf(
     concession_id: int,
+    status:        bool    = Query(False, description="Solo verificar si está listo, sin descargar el archivo"),
     db:            Session = Depends(get_db),
     current_user:  User    = Depends(get_current_active_user),
 ):
-    """Sirve el PDF del expediente inline si está listo, o indica que aún no está disponible."""
+    """Sirve el PDF del expediente inline si está listo.
+
+    - Sin parámetros: descarga el PDF (application/pdf) si está listo, o {ready: false}.
+    - ?status=true: devuelve {ready: bool} sin descargar el archivo.
+    """
     doc = db.query(ConcessionDocument).filter(
         ConcessionDocument.concession_id == concession_id,
         ConcessionDocument.document_type == "expediente_pdf",
     ).first()
 
-    if not doc or not os.path.exists(doc.file_path):
+    is_ready = bool(doc and os.path.exists(doc.file_path))
+
+    if status:
+        return {"ready": is_ready}
+
+    if not is_ready:
         return {"ready": False, "message": "PDF no generado aún. Llama a POST /expediente/pdf primero."}
 
     c = db.query(Concession).filter(Concession.id == concession_id).first()

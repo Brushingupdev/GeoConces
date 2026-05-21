@@ -10,9 +10,10 @@ import {
   DollarSign, RefreshCw, ShieldCheck, ShieldAlert, FileText,
   AlertCircle, Mail, Fingerprint, Link2, Clock, Zap,
   CheckCircle2, XCircle, TrendingDown, ScanLine,
+  ExternalLink, Eye, EyeOff, Download,
 } from "lucide-react";
 import { SubstanceBadge } from "@/app/(dashboard)/explorar/page";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Vigente", expired: "Caducada", pending: "En trámite", suspended: "Suspendida",
@@ -117,6 +118,174 @@ function AddToWatchlistButton({ concessionId }: { concessionId: number }) {
               </button>
             ))
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Expediente PDF Viewer ─────────────────────────────────────────────────────
+type PdfState = "checking" | "idle" | "building" | "ready" | "error";
+
+function ExpedientePdfSection({ concessionId, numPages }: {
+  concessionId: number;
+  numPages?: number | null;
+}) {
+  const [state,      setState]      = useState<PdfState>("checking");
+  const [blobUrl,    setBlobUrl]    = useState<string | null>(null);
+  const [showInline, setShowInline] = useState(false);
+  const [pollCount,  setPollCount]  = useState(0);
+  const [errorMsg,   setErrorMsg]   = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    api.get(`/concessions/${concessionId}/expediente/pdf?status=true`)
+      .then((res) => setState(res.data?.ready ? "ready" : "idle"))
+      .catch(() => setState("idle"));
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [concessionId]);
+
+  // Revocar blob URL al desmontar para no acumular memoria
+  useEffect(() => {
+    return () => { if (blobUrl) URL.revokeObjectURL(blobUrl); };
+  }, [blobUrl]);
+
+  const startPolling = () => {
+    let attempts = 0;
+    pollRef.current = setInterval(async () => {
+      attempts++;
+      setPollCount(attempts);
+      try {
+        const res = await api.get(`/concessions/${concessionId}/expediente/pdf?status=true`);
+        if (res.data?.ready) {
+          clearInterval(pollRef.current!);
+          setState("ready");
+        }
+      } catch {}
+      if (attempts >= 150) {
+        clearInterval(pollRef.current!);
+        setErrorMsg("Tiempo de espera agotado. Intenta de nuevo.");
+        setState("error");
+      }
+    }, 2000);
+  };
+
+  const handleBuild = async () => {
+    setState("building");
+    setPollCount(0);
+    try {
+      const res = await api.post(`/concessions/${concessionId}/expediente/pdf`);
+      if (res.data?.ready) {
+        setState("ready");
+      } else if (res.data?.queued) {
+        startPolling();
+      } else {
+        setErrorMsg(res.data?.detail ?? "No se pudo iniciar la generación.");
+        setState("error");
+      }
+    } catch (err: any) {
+      setErrorMsg(err.response?.data?.detail ?? "Error al generar el PDF.");
+      setState("error");
+    }
+  };
+
+  const fetchBlob = async (): Promise<string | null> => {
+    try {
+      const res = await api.get(`/concessions/${concessionId}/expediente/pdf`, {
+        responseType: "blob",
+      });
+      return URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+    } catch {
+      setErrorMsg("Error al obtener el PDF.");
+      return null;
+    }
+  };
+
+  const handleOpenTab = async () => {
+    const url = await fetchBlob();
+    if (url) window.open(url, "_blank");
+  };
+
+  const handleToggleInline = async () => {
+    if (showInline) { setShowInline(false); return; }
+    const url = blobUrl ?? await fetchBlob();
+    if (url) { setBlobUrl(url); setShowInline(true); }
+  };
+
+  const estSecs = numPages ? Math.ceil(numPages * 0.15) : null;
+
+  if (state === "checking") return null;
+
+  if (state === "idle") return (
+    <div className="mt-3 pt-3 border-t border-slate-100">
+      <button
+        onClick={handleBuild}
+        className="flex items-center gap-1.5 text-xs font-medium text-primary-600 hover:text-primary-800 transition"
+      >
+        <Download size={12} />
+        Generar PDF completo{numPages ? ` · ${numPages} págs` : ""}
+      </button>
+      {estSecs && (
+        <p className="mt-0.5 text-[10px] text-slate-400">
+          Primera vez ~{estSecs < 60 ? `${estSecs}s` : `${Math.ceil(estSecs / 60)}min`} · Luego instantáneo
+        </p>
+      )}
+    </div>
+  );
+
+  if (state === "building") {
+    const elapsed = pollCount * 2;
+    const remaining = estSecs ? Math.max(0, estSecs - elapsed) : null;
+    return (
+      <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2 text-xs text-primary-600">
+        <div className="h-3 w-3 shrink-0 rounded-full border-2 border-primary-200 border-t-primary-600 animate-spin" />
+        <span>
+          Generando PDF…
+          {remaining != null && (
+            <span className="ml-1 text-slate-400">
+              ~{remaining < 60 ? `${remaining}s` : `${Math.ceil(remaining / 60)}min`} restantes
+            </span>
+          )}
+        </span>
+      </div>
+    );
+  }
+
+  if (state === "error") return (
+    <div className="mt-3 pt-3 border-t border-slate-100">
+      <p className="text-xs text-red-500">{errorMsg}</p>
+      <button
+        onClick={() => { setErrorMsg(null); setState("idle"); }}
+        className="mt-1 text-[10px] text-slate-400 hover:text-slate-600 transition"
+      >
+        Reintentar
+      </button>
+    </div>
+  );
+
+  // ready
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-100">
+      <div className="flex items-center gap-4">
+        <button
+          onClick={handleOpenTab}
+          className="flex items-center gap-1.5 text-xs font-semibold text-primary-700 hover:text-primary-900 transition"
+        >
+          <ExternalLink size={12} /> Abrir PDF
+        </button>
+        <button
+          onClick={handleToggleInline}
+          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition"
+        >
+          {showInline ? <EyeOff size={12} /> : <Eye size={12} />}
+          {showInline ? "Ocultar" : "Ver aquí"}
+        </button>
+      </div>
+      {showInline && blobUrl && (
+        <div className="mt-3 rounded-lg border border-slate-200 overflow-hidden" style={{ height: 640 }}>
+          <iframe src={blobUrl} className="w-full h-full" title="Expediente PDF" />
         </div>
       )}
     </div>
@@ -275,9 +444,17 @@ function SidemcatSection({
           </div>
         ) : null}
         {data.has_pdf && (
-          <div className="col-span-2 flex items-center gap-1.5 text-primary-600">
-            <FileText size={12} />
-            <span className="text-xs">Expediente digitalizado disponible ({data.pdf_num_paginas} páginas)</span>
+          <div className="col-span-2">
+            <div className="flex items-center gap-1.5 text-primary-600">
+              <FileText size={12} />
+              <span className="text-xs font-medium">
+                Expediente digitalizado · {data.pdf_num_paginas} páginas
+              </span>
+            </div>
+            <ExpedientePdfSection
+              concessionId={concessionId}
+              numPages={data.pdf_num_paginas}
+            />
           </div>
         )}
       </div>
