@@ -1,0 +1,7 @@
+# PostgreSQL 15 con PostGIS 3.3 + pgvector
+# La imagen postgis/postgis ya tiene el repositorio PGDG configurado
+FROM postgis/postgis:15-3.3
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-15-pgvector \
+    && rm -rf /var/lib/apt/lists/*
