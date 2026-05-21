@@ -6,103 +6,106 @@ import { useAuthStore } from "@/store/auth";
 import { api } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
 import {
-  LayoutDashboard,
-  Map,
-  Search,
-  Bookmark,
-  Bell,
-  LogOut,
-  FileText,
-  Settings,
-  Briefcase,
-  CreditCard,
-  DatabaseZap,
-  ChevronDown,
-  type LucideIcon,
+  LayoutDashboard, Map, Search, Bookmark, Bell, LogOut,
+  Settings, Briefcase, CreditCard, DatabaseZap, TrendingUp,
+  BarChart3, Menu, X, type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Menu, X } from "lucide-react";
 
-type NavItem = {
-  label: string;
-  href: string;
-  icon: LucideIcon;
-  badge?: number;
-};
+/* ── Types ─────────────────────────────────────────────────────────────── */
+type NavItem  = { label: string; href: string; icon: LucideIcon };
+type NavGroup = { title: string; items: NavItem[] };
 
-const nav: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Importaciones", href: "/importaciones", icon: DatabaseZap },
-  { label: "Mapa", href: "/mapa", icon: Map },
-  { label: "Mis concesiones", href: "/mis-concesiones", icon: Briefcase },
-  { label: "Explorar", href: "/explorar", icon: Search },
-  { label: "Oportunidades", href: "/oportunidades", icon: FileText },
-  { label: "Watchlist", href: "/watchlist", icon: Bookmark },
-  { label: "Alertas", href: "/alertas", icon: Bell }, // badge se llena dinámicamente
-  { label: "Reportes", href: "/reportes", icon: FileText },
-  { label: "Facturación", href: "/facturacion", icon: CreditCard },
-  { label: "Configuración", href: "/configuracion", icon: Settings },
+const NAV_GROUPS: NavGroup[] = [
+  {
+    title: "Principal",
+    items: [
+      { label: "Dashboard",       href: "/dashboard",       icon: LayoutDashboard },
+      { label: "Mapa",            href: "/mapa",            icon: Map             },
+      { label: "Explorar",        href: "/explorar",        icon: Search          },
+      { label: "Mis concesiones", href: "/mis-concesiones", icon: Briefcase       },
+    ],
+  },
+  {
+    title: "Herramientas",
+    items: [
+      { label: "Importaciones", href: "/importaciones", icon: DatabaseZap },
+      { label: "Oportunidades", href: "/oportunidades", icon: TrendingUp  },
+      { label: "Watchlist",     href: "/watchlist",     icon: Bookmark    },
+      { label: "Alertas",       href: "/alertas",       icon: Bell        },
+      { label: "Reportes",      href: "/reportes",      icon: BarChart3   },
+    ],
+  },
+  {
+    title: "Cuenta",
+    items: [
+      { label: "Facturación",   href: "/facturacion",   icon: CreditCard },
+      { label: "Configuración", href: "/configuracion", icon: Settings   },
+    ],
+  },
 ];
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+/* ── Logo mark ──────────────────────────────────────────────────────── */
+function GeoMark({ size = 28, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 44" fill="none" className={className} aria-hidden>
+      <path d="M20 2 L37 11.5 L37 32.5 L20 42 L3 32.5 L3 11.5 Z"
+        stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinejoin="round" />
+      <line x1="9"  y1="17" x2="31" y2="17" stroke="currentColor" strokeWidth="1.4" opacity="0.45" strokeLinecap="round"/>
+      <line x1="7"  y1="22" x2="33" y2="22" stroke="currentColor" strokeWidth="1.8" opacity="0.65" strokeLinecap="round"/>
+      <line x1="9"  y1="27" x2="31" y2="27" stroke="currentColor" strokeWidth="1.4" opacity="0.45" strokeLinecap="round"/>
+      <circle cx="20" cy="33" r="2.8" fill="currentColor" opacity="0.9"/>
+    </svg>
+  );
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────── */
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
+  const router   = useRouter();
   const { user, token, logout, hydrate, setAuth } = useAuthStore();
-  const fetchingMe = useRef(false);
+  const fetchingMe   = useRef(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // 1. Restore token from localStorage on mount
-  useEffect(() => {
-    hydrate();
-  }, [hydrate]);
+  useEffect(() => { hydrate(); }, [hydrate]);
 
-  // 2. If we have a token but no user (e.g. after page refresh), fetch /users/me
   useEffect(() => {
     if (token && !user && !fetchingMe.current) {
       fetchingMe.current = true;
-      api
-        .get("/users/me")
+      api.get("/users/me")
         .then((res) => setAuth(res.data, token))
-        .catch(() => {
-          // Token invalid — clear and redirect handled by api.ts interceptor
-        })
-        .finally(() => {
-          fetchingMe.current = false;
-        });
+        .catch(() => {})
+        .finally(() => { fetchingMe.current = false; });
     }
   }, [token, user, setAuth]);
 
-  // 3. Redirect to login only after hydration completed (token stays null = no session)
   useEffect(() => {
-    if (token !== null) return; // hydrated and has token — stay
+    if (token !== null) return;
     const stored = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
     if (!stored) router.push("/login");
   }, [token, router]);
 
-  // Polled unread-alerts badge. Refetches every 60s and on focus.
-  const { data: unread } = useQuery<{ count: number }>({
+  const { data: unreadData } = useQuery<{ count: number }>({
     queryKey: ["alerts", "unread-count"],
-    queryFn: async () => (await api.get("/alerts/unread-count")).data,
-    enabled: Boolean(token),
-    refetchInterval: 60_000,
+    queryFn:  async () => (await api.get("/alerts/unread-count")).data,
+    enabled:  Boolean(token),
+    refetchInterval:      60_000,
     refetchOnWindowFocus: true,
     staleTime: 30_000,
   });
-  const unreadCount = unread?.count ?? 0;
+  const unreadCount = unreadData?.count ?? 0;
+
+  const initials = (user?.full_name || user?.email || "G")
+    .split(" ").map((w: string) => w[0]).slice(0, 2).join("").toUpperCase();
 
   return (
-    <div className="min-h-screen bg-[#eff4f3] p-0">
-      <div className="flex min-h-screen overflow-hidden rounded-[12px] border border-[#dce8e6] bg-white shadow-[0_24px_72px_rgba(15,23,42,0.08)]">
+    <div className="min-h-screen bg-[#eaeeec]">
+      <div className="flex min-h-screen">
+
         {/* Mobile overlay */}
         {mobileOpen && (
-          <div
-            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
-            onClick={() => setMobileOpen(false)}
-          />
+          <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
+            onClick={() => setMobileOpen(false)} />
         )}
 
         {/* Mobile hamburger */}
@@ -113,105 +116,99 @@ export default function DashboardLayout({
           {mobileOpen ? <X size={18} /> : <Menu size={18} />}
         </button>
 
-        <aside className={`fixed inset-y-0 left-0 z-40 flex w-[235px] flex-col border-r border-[#dce8e6] bg-white transition-transform duration-300 lg:relative lg:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}>
-          <div className="absolute inset-x-0 bottom-0 h-56 bg-[radial-gradient(circle_at_bottom_left,_rgba(30,139,129,0.08),_transparent_48%)]" />
-          <div className="absolute inset-x-0 bottom-0 h-72 opacity-60 [background-image:radial-gradient(circle_at_1px_1px,rgba(20,90,85,0.08)_1px,transparent_0)] [background-size:18px_18px]" />
-
-          <div className="relative px-7 pb-6 pt-8">
-            <div className="mb-3 h-8 w-14 text-primary-700">
-              <svg viewBox="0 0 60 36" className="h-full w-full" fill="none">
-                <path
-                  d="M8 24C15 15 21 8 29 4C37 8 43 15 52 24"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M16 24C21 20 25 18 29 16C35 18 40 20 46 24"
-                  stroke="currentColor"
-                  strokeWidth="2.3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  opacity="0.8"
-                />
-              </svg>
+        {/* ── Sidebar ───────────────────────────────────────────────── */}
+        <aside className={`
+          fixed inset-y-0 left-0 z-40 flex w-[220px] flex-col
+          border-r border-slate-200/80 bg-white
+          transition-transform duration-300
+          lg:relative lg:translate-x-0
+          ${mobileOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"}
+        `}>
+          {/* Logo */}
+          <div className="flex items-center gap-2.5 border-b border-slate-100 px-5 py-5">
+            <GeoMark size={26} className="shrink-0 text-primary-700" />
+            <div>
+              <p className="text-[15px] font-bold leading-none tracking-tight text-primary-900">GeoConces</p>
+              <p className="mt-0.5 text-[10px] uppercase tracking-widest text-slate-400">Geominería</p>
             </div>
-            <h2 className="text-[2.1rem] font-semibold tracking-tight text-primary-900">
-              GeoConces
-            </h2>
-            <p className="mt-1 text-xs uppercase tracking-[0.14em] text-slate-500">
-              Plataforma geominera
-            </p>
           </div>
 
-          <nav className="relative flex-1 space-y-1 overflow-auto px-3 py-2">
-            {nav.map((item) => {
-              const active = pathname === item.href;
-              // Inject the live unread-count into the "Alertas" entry.
-              const liveBadge =
-                item.href === "/alertas" && unreadCount > 0
-                  ? unreadCount
-                  : item.badge;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className={`flex items-center gap-3 rounded-[8px] px-4 py-3.5 text-[15px] font-medium transition ${
-                    active
-                      ? "bg-[linear-gradient(135deg,#0f6f69_0%,#127a73_100%)] text-white shadow-[0_12px_28px_rgba(18,122,115,0.18)]"
-                      : "text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  <item.icon size={18} />
-                  <span className="flex-1">{item.label}</span>
-                  {liveBadge ? (
-                    <span
-                      className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs font-semibold ${
-                        active ? "bg-white/20 text-white" : "bg-primary-700 text-white"
-                      }`}
-                    >
-                      {liveBadge > 99 ? "99+" : liveBadge}
-                    </span>
-                  ) : null}
-                </Link>
-              );
-            })}
+          {/* Nav groups */}
+          <nav className="flex-1 overflow-y-auto py-3 space-y-1">
+            {NAV_GROUPS.map((group, gi) => (
+              <div key={gi}>
+                {gi > 0 && <div className="mx-3 my-2 border-t border-slate-100" />}
+                <p className="px-5 pb-1 pt-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  {group.title}
+                </p>
+                <div className="space-y-0.5 px-2">
+                  {group.items.map((item) => {
+                    const active = pathname === item.href || pathname.startsWith(item.href + "/");
+                    const badge  = item.href === "/alertas" && unreadCount > 0 ? unreadCount : undefined;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setMobileOpen(false)}
+                        className={`
+                          flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13.5px] font-medium transition-all
+                          ${active
+                            ? "bg-primary-700 text-white shadow-sm"
+                            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                          }
+                        `}
+                      >
+                        <item.icon size={16} className="shrink-0" />
+                        <span className="flex-1 truncate">{item.label}</span>
+                        {badge ? (
+                          <span className={`
+                            inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5
+                            text-[10px] font-bold
+                            ${active ? "bg-white/25 text-white" : "bg-primary-100 text-primary-700"}
+                          `}>
+                            {badge > 99 ? "99+" : badge}
+                          </span>
+                        ) : null}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </nav>
 
-          <div className="relative mt-auto px-4 pb-5">
-            <div className="flex items-center gap-3 rounded-[8px] border border-[#dce8e6] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary-700 text-sm font-semibold text-white">
-                  {(user?.full_name || user?.email || "G").slice(0, 1).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-slate-900">
-                    {user?.full_name || "Adrian"}
-                  </p>
-                  <p className="truncate text-xs text-slate-500">
-                    {user?.email || "Sin sesión"}
-                  </p>
-                </div>
+          {/* User card */}
+          <div className="border-t border-slate-100 p-3">
+            <div className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-700 text-xs font-bold text-white">
+                {initials}
               </div>
-              <div className="ml-auto flex items-center gap-2">
-                <button
-                  onClick={logout}
-                  className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition hover:text-slate-900"
-                  aria-label="Cerrar sesion"
-                >
-                  <LogOut size={16} />
-                </button>
-                <ChevronDown size={16} className="text-slate-400" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] font-semibold leading-tight text-slate-900">
+                  {user?.full_name || "Usuario"}
+                </p>
+                <p className="truncate text-[11px] leading-tight text-slate-500">
+                  {user?.email || ""}
+                </p>
               </div>
+              <button
+                onClick={logout}
+                className="shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700"
+                title="Cerrar sesión"
+              >
+                <LogOut size={15} />
+              </button>
             </div>
           </div>
         </aside>
 
-        <main className="flex-1 overflow-hidden bg-[#f9fafa]">
-          <div className="h-full px-4 py-2">{children}</div>
+        {/* ── Main ─────────────────────────────────────────────────── */}
+        <main className="flex-1 min-w-0 bg-[#f4f7f5]">
+          <div className="h-full min-h-screen px-5 py-4 lg:px-6 lg:py-5">
+            {children}
+          </div>
         </main>
+
       </div>
     </div>
   );
