@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     # Gemini Flash (OCR mejorado para expedientes). Si está vacío se usa Tesseract.
     GEMINI_API_KEY: str | None = None
 
+    # Directorio para PDFs y archivos generados
+    MEDIA_ROOT: str = "/app/media"
+
     @field_validator("SECRET_KEY")
     @classmethod
     def _validate_secret(cls, v: str, info):

@@ -1,5 +1,7 @@
 """Scheduled jobs that sync from external data sources."""
 
+import time
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
 from app.core.celery_app import celery_app
@@ -106,6 +108,143 @@ def extract_expedientes_tracked():
             extract_expediente_task.delay(c.id)
             queued += 1
         return {"queued": queued}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="sync.build_expediente_pdf", bind=True, max_retries=1)
+def build_expediente_pdf_task(self, concession_id: int) -> dict:
+    """Descarga todas las páginas del expediente y construye un PDF completo en disco."""
+    import os
+    from app.models import Concession, ConcessionDocument
+    from app.expediente.client import download_pages, count_pages
+    from app.expediente.pdf_builder import build_pdf_from_pages
+    from app.core.config import settings
+
+    db = SessionLocal()
+    try:
+        c = db.query(Concession).filter(Concession.id == concession_id).first()
+        if not c:
+            return {"error": "Concesión no encontrada"}
+
+        sidemcat = c.sidemcat_data or {}
+        cod_archivo = sidemcat.get("pdf_cod_archivo") or sidemcat.get("codArchivo")
+        if not cod_archivo:
+            return {"error": "Sin cod_archivo — ejecuta /sidemcat primero"}
+
+        cod_archivo = int(cod_archivo)
+        cod_almacen = 1
+
+        total_pages = int(sidemcat.get("pdf_num_paginas") or 0)
+        if not total_pages:
+            total_pages = count_pages(cod_archivo, cod_almacen)
+        if not total_pages:
+            return {"error": "No se pudo determinar el número de páginas"}
+
+        pages_bytes = download_pages(cod_archivo, cod_almacen, list(range(1, total_pages + 1)))
+        if not pages_bytes:
+            return {"error": "No se pudo descargar ninguna página"}
+
+        pdf_bytes = build_pdf_from_pages(pages_bytes)
+
+        out_dir = os.path.join(settings.MEDIA_ROOT, "expedientes")
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, f"{c.code}.pdf")
+        with open(out_path, "wb") as f:
+            f.write(pdf_bytes)
+
+        existing = db.query(ConcessionDocument).filter(
+            ConcessionDocument.concession_id == concession_id,
+            ConcessionDocument.document_type == "expediente_pdf",
+        ).first()
+        if existing:
+            existing.file_path = out_path
+        else:
+            db.add(ConcessionDocument(
+                concession_id=concession_id,
+                document_type="expediente_pdf",
+                file_path=out_path,
+            ))
+        db.commit()
+
+        return {
+            "concession_id": concession_id,
+            "code": c.code,
+            "pages": len(pages_bytes),
+            "total_pages": total_pages,
+            "size_kb": len(pdf_bytes) // 1024,
+        }
+    except Exception as exc:
+        db.close()
+        raise self.retry(exc=exc, countdown=60)
+    finally:
+        db.close()
+
+
+@celery_app.task(name="sync.enrich_sidemcat_batch", bind=True, max_retries=1)
+def enrich_sidemcat_batch(self, batch_size: int = 150, max_age_days: int = 30) -> Dict[str, int]:
+    """Enriquece concesiones con datos de SIDEMCAT en lotes nocturnos.
+
+    Prioridad: watchlisted → activas → en trámite → caducadas.
+    Delay de 0.8s entre llamadas para no saturar INGEMMET (~2min por 150).
+    """
+    from sqlalchemy import case, or_
+    from app.models import Concession, ConcessionStatus, WatchlistItem
+    from app.sidemcat.client import SIDEMCATClient
+
+    db = SessionLocal()
+    updated = 0
+    failed = 0
+
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+
+        watchlisted_ids = {
+            row[0] for row in db.query(WatchlistItem.concession_id).all()
+        }
+
+        priority_order = case(
+            (Concession.id.in_(watchlisted_ids), 0) if watchlisted_ids else (Concession.id.is_(None), 0),
+            (Concession.status == ConcessionStatus.active, 1),
+            (Concession.status == ConcessionStatus.pending, 2),
+            else_=3,
+        )
+
+        concessions = (
+            db.query(Concession)
+            .filter(
+                or_(
+                    Concession.sidemcat_data.is_(None),
+                    Concession.sidemcat_fetched_at < cutoff,
+                )
+            )
+            .order_by(priority_order)
+            .limit(batch_size)
+            .all()
+        )
+
+        client = SIDEMCATClient(timeout=20.0)
+
+        for c in concessions:
+            data = client.fetch_concession(c.code)
+            if data:
+                c.sidemcat_data = data
+                c.sidemcat_fetched_at = datetime.now(timezone.utc)
+                if data.get("title_date") and not c.title_date:
+                    try:
+                        c.title_date = datetime.fromisoformat(data["title_date"])
+                    except Exception:
+                        pass
+                updated += 1
+            else:
+                failed += 1
+            db.commit()
+            time.sleep(0.8)
+
+        return {"updated": updated, "failed": failed, "remaining": max(0, db.query(Concession).filter(Concession.sidemcat_data.is_(None)).count() - batch_size)}
+    except Exception as exc:
+        db.close()
+        raise self.retry(exc=exc, countdown=120)
     finally:
         db.close()
 

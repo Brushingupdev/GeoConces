@@ -51,6 +51,12 @@ celery_app.conf.update(
             "task": "sync.run_all_sources",
             "schedule": crontab(hour=3, minute=0, day_of_week="mon"),
         },
+        # ── Enriquecimiento SIDEMCAT (cada noche 01:00, 150 concesiones) ────
+        "enrich-sidemcat-nightly": {
+            "task": "sync.enrich_sidemcat_batch",
+            "schedule": crontab(hour=1, minute=0),
+            "kwargs": {"batch_size": 150, "max_age_days": 30},
+        },
         # ── Embeddings semánticos (lunes 04:00) ─────────────────────────────
         "generate-embeddings-weekly": {
             "task": "generate_embeddings_batch",

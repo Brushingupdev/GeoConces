@@ -1,10 +1,13 @@
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from typing import Optional, List
 from app.core.database import get_db
 from app.common.dependencies import get_current_active_user
-from app.models import Concession, ConcessionGeometry, ConcessionEvent, User, ConcessionStatus, TrackedRuc
+from app.models import Concession, ConcessionDocument, ConcessionGeometry, ConcessionEvent, User, ConcessionStatus, TrackedRuc
 from app.schemas import ConcessionSearchResult, ConcessionDetail
 
 router = APIRouter(prefix="/concessions", tags=["concessions"])
@@ -385,6 +388,71 @@ def get_concession(
             for e in events
         ],
     }
+
+
+@router.post("/{concession_id}/expediente/pdf")
+def trigger_expediente_pdf(
+    concession_id: int,
+    db:            Session = Depends(get_db),
+    current_user:  User    = Depends(get_current_active_user),
+):
+    """Encola la generación del PDF completo del expediente en background.
+
+    Si el PDF ya existe en disco devuelve {ready: true} de inmediato.
+    Si no, encola el task Celery y devuelve {queued: true, task_id}.
+    """
+    c = db.query(Concession).filter(Concession.id == concession_id).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Concesión no encontrada")
+
+    doc = db.query(ConcessionDocument).filter(
+        ConcessionDocument.concession_id == concession_id,
+        ConcessionDocument.document_type == "expediente_pdf",
+    ).first()
+
+    if doc and os.path.exists(doc.file_path):
+        return {"ready": True, "message": "PDF ya disponible"}
+
+    sidemcat = c.sidemcat_data or {}
+    if not sidemcat.get("pdf_cod_archivo") and not sidemcat.get("codArchivo"):
+        raise HTTPException(
+            status_code=422,
+            detail="Esta concesión no tiene expediente digitalizado en SIDEMCAT.",
+        )
+
+    from app.jobs.sync import build_expediente_pdf_task
+    task = build_expediente_pdf_task.delay(concession_id)
+    return {
+        "queued":   True,
+        "task_id":  task.id,
+        "pages":    sidemcat.get("pdf_num_paginas"),
+        "message":  "Generando PDF. Consulta GET /expediente/pdf para saber cuándo está listo.",
+    }
+
+
+@router.get("/{concession_id}/expediente/pdf")
+def serve_expediente_pdf(
+    concession_id: int,
+    db:            Session = Depends(get_db),
+    current_user:  User    = Depends(get_current_active_user),
+):
+    """Sirve el PDF del expediente inline si está listo, o indica que aún no está disponible."""
+    doc = db.query(ConcessionDocument).filter(
+        ConcessionDocument.concession_id == concession_id,
+        ConcessionDocument.document_type == "expediente_pdf",
+    ).first()
+
+    if not doc or not os.path.exists(doc.file_path):
+        return {"ready": False, "message": "PDF no generado aún. Llama a POST /expediente/pdf primero."}
+
+    c = db.query(Concession).filter(Concession.id == concession_id).first()
+    filename = f"expediente_{c.code if c else concession_id}.pdf"
+
+    return FileResponse(
+        doc.file_path,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename={filename}"},
+    )
 
 
 def _to_search(c: Concession) -> dict:
