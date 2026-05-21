@@ -12,7 +12,7 @@ import {
   CheckCircle2, XCircle, TrendingDown, ScanLine,
   ExternalLink, Eye, EyeOff, Download,
 } from "lucide-react";
-import { SubstanceBadge } from "@/app/(dashboard)/explorar/page";
+import SubstanceBadge from "@/components/ui/SubstanceBadge";
 import { useState, useEffect, useRef } from "react";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -39,8 +39,19 @@ function DetailRow({ label, value }: { label: string; value?: string | number | 
   );
 }
 
-// Muestra la fecha de titulación, o "Titulada (fecha no disponible)" si SIDEMCAT
-// confirma que está titulada pero no tiene la fecha exacta registrada.
+// Versión inline (una línea) para el metrics strip del hero
+function TitleDateInline({ titleDate, concessionId }: { titleDate?: string | null; concessionId: number }) {
+  const { data: sidemcat } = useQuery({
+    queryKey: ["sidemcat", concessionId],
+    enabled: !titleDate,
+    queryFn: async () => (await api.get(`/concessions/${concessionId}/sidemcat`)).data,
+    staleTime: 1000 * 60 * 60 * 6,
+  });
+  if (titleDate) return <>{fmt(titleDate)}</>;
+  if (sidemcat?.is_titled) return <span className="text-slate-500">Confirmada</span>;
+  return <span className="text-slate-400">—</span>;
+}
+
 function TitleDateRow({ titleDate, concessionId }: { titleDate?: string | null; concessionId: number }) {
   const { data: sidemcat } = useQuery({
     queryKey: ["sidemcat", concessionId],
@@ -1174,147 +1185,169 @@ export default function ConcessionDetailPage() {
     daysToExpiry = Math.ceil((new Date(c.expiration_date).getTime() - Date.now()) / 86_400_000);
   }
 
+  const STRIPE: Record<string, string> = {
+    active:    "bg-emerald-600",
+    expired:   "bg-red-500",
+    pending:   "bg-amber-500",
+    suspended: "bg-slate-400",
+  };
+
   return (
-    <div className="max-w-5xl mx-auto pb-12">
-      {/* Breadcrumb */}
-      <nav className="mb-5 flex items-center gap-2 text-xs text-slate-400">
+    <div className="max-w-4xl mx-auto pb-12">
+
+      {/* ── Breadcrumb ────────────────────────────────────────────────── */}
+      <nav className="mb-4 flex items-center gap-2 text-xs text-slate-400">
         <Link href="/explorar" className="hover:text-slate-700 transition flex items-center gap-1">
           <ChevronRight size={12} className="rotate-180" /> Explorar
         </Link>
         <span>/</span>
-        <span className="text-slate-600 font-medium">{c.code}</span>
+        <span className="font-mono text-slate-600">{c.code}</span>
       </nav>
 
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-        <div>
-          <p className="font-mono text-xs text-slate-400 mb-1">{c.code}</p>
-          <h1 className="text-2xl font-bold text-slate-900 leading-tight">{c.name}</h1>
-          {c.holder_name && (
-            <p className="mt-1.5 text-sm text-slate-500 flex items-center gap-1.5">
-              <User size={13} />
-              {c.holder_name}
-              {c.holder_ruc && <span className="font-mono text-xs text-slate-400">· RUC {c.holder_ruc}</span>}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${statusStyle}`}>
-            {statusLabel}
-          </span>
-          {c.concession_type && <SubstanceBadge type={c.concession_type} />}
-          <AddToWatchlistButton concessionId={c.id} />
-          <Link
-            href={`/mapa?code=${c.code}&id=${c.id}`}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
-          >
-            <Map size={14} /> Ver en mapa
-          </Link>
+      {/* ── Hero card ─────────────────────────────────────────────────── */}
+      <div className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {/* Status stripe */}
+        <div className={`h-1.5 w-full ${STRIPE[c.status] ?? "bg-slate-300"}`} />
+
+        <div className="p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            {/* Left: name + holder */}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="font-mono text-xs text-slate-400">{c.code}</span>
+                <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${statusStyle}`}>
+                  {statusLabel}
+                </span>
+                {c.concession_type && <SubstanceBadge type={c.concession_type} />}
+              </div>
+              <h1 className="text-xl font-bold text-slate-900 leading-snug">{c.name}</h1>
+              {c.holder_name && (
+                <p className="mt-1.5 flex items-center gap-1.5 text-sm text-slate-500">
+                  <User size={13} className="shrink-0" />
+                  {c.holder_name}
+                  {c.holder_ruc && (
+                    <span className="font-mono text-xs text-slate-400">· {c.holder_ruc}</span>
+                  )}
+                </p>
+              )}
+            </div>
+
+            {/* Right: actions */}
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
+              <AddToWatchlistButton concessionId={c.id} />
+              <Link href={`/mapa?code=${c.code}&id=${c.id}`}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition">
+                <Map size={14} /> Ver en mapa
+              </Link>
+            </div>
+          </div>
+
+          {/* Key metrics strip */}
+          <div className="mt-4 flex flex-wrap gap-6 border-t border-slate-100 pt-4 text-sm">
+            <div>
+              <p className="text-xs text-slate-400">Área</p>
+              <p className="font-bold text-slate-800">
+                {c.area_hectares != null ? `${Number(c.area_hectares).toLocaleString("es-PE", { maximumFractionDigits: 0 })} ha` : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">Región</p>
+              <p className="font-semibold text-slate-800">{c.region || "—"}</p>
+            </div>
+            {c.province && (
+              <div>
+                <p className="text-xs text-slate-400">Provincia</p>
+                <p className="font-semibold text-slate-800">{c.province}</p>
+              </div>
+            )}
+            <div>
+              <p className="text-xs text-slate-400">Registro</p>
+              <p className="font-semibold text-slate-800">{fmt(c.registration_date)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">Titulación</p>
+              <p className="font-semibold text-slate-800"><TitleDateInline titleDate={c.title_date} concessionId={c.id} /></p>
+            </div>
+            {c.expiration_date && (
+              <div>
+                <p className="text-xs text-slate-400">Vencimiento</p>
+                <p className={`font-semibold ${daysToExpiry !== null && daysToExpiry < 60 ? "text-red-600" : "text-slate-800"}`}>
+                  {fmt(c.expiration_date)}
+                </p>
+              </div>
+            )}
+            <div className="ml-auto">
+              <Link href={`/mis-concesiones?ruc=${c.holder_ruc ?? ""}`}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-800 transition">
+                <User size={12} /> Seguir titular
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Expiry alerts */}
+      {/* ── Expiry alerts ──────────────────────────────────────────────── */}
       {daysToExpiry !== null && daysToExpiry >= 0 && daysToExpiry <= 30 && (
-        <div className="mb-5 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <AlertTriangle size={16} className="text-amber-600 shrink-0" />
-          <p className="text-sm font-medium text-amber-800">
-            Vence en <strong>{daysToExpiry} día{daysToExpiry !== 1 ? "s" : ""}</strong>.
-          </p>
+        <div className="mb-4 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+          <p className="text-sm font-medium text-amber-800">Vence en <strong>{daysToExpiry} día{daysToExpiry !== 1 ? "s" : ""}</strong>.</p>
         </div>
       )}
       {daysToExpiry !== null && daysToExpiry < 0 && (
-        <div className="mb-5 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-          <AlertTriangle size={16} className="text-red-600 shrink-0" />
-          <p className="text-sm font-medium text-red-800">
-            Venció hace <strong>{Math.abs(daysToExpiry)} días</strong>.
-          </p>
+        <div className="mb-4 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <AlertTriangle size={15} className="text-red-600 shrink-0" />
+          <p className="text-sm font-medium text-red-800">Venció hace <strong>{Math.abs(daysToExpiry)} días</strong>.</p>
         </div>
       )}
 
-      {/* Data grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {/* Titular */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-2 mb-3 text-slate-500">
-            <User size={14} /><h2 className="text-xs font-semibold uppercase tracking-wide">Titular</h2>
-          </div>
-          <DetailRow label="Razón social" value={c.holder_name} />
-          <DetailRow label="RUC" value={c.holder_ruc} />
-        </div>
-
-        {/* Ubicación */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-2 mb-3 text-slate-500">
-            <MapPin size={14} /><h2 className="text-xs font-semibold uppercase tracking-wide">Ubicación</h2>
-          </div>
-          <DetailRow label="Región" value={c.region} />
-          <DetailRow label="Provincia" value={c.province} />
-          <DetailRow label="Distrito" value={c.district} />
-        </div>
-
-        {/* Concesión */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-2 mb-3 text-slate-500">
-            <Layers size={14} /><h2 className="text-xs font-semibold uppercase tracking-wide">Concesión</h2>
-          </div>
-          <DetailRow label="Tipo" value={c.concession_type} />
-          <DetailRow label="Área" value={c.area_hectares != null ? `${c.area_hectares.toFixed(2)} ha` : null} />
-          <DetailRow label="Fuente" value={c.source} />
-        </div>
-
-        {/* Fechas */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-2 mb-3 text-slate-500">
-            <Calendar size={14} /><h2 className="text-xs font-semibold uppercase tracking-wide">Fechas</h2>
-          </div>
-          <DetailRow label="Registro" value={fmt(c.registration_date)} />
-          <TitleDateRow titleDate={c.title_date} concessionId={c.id} />
-          <DetailRow label="Vencimiento" value={fmt(c.expiration_date)} />
-        </div>
-
-        {/* Sistema */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-2 mb-3 text-slate-500">
-            <Hash size={14} /><h2 className="text-xs font-semibold uppercase tracking-wide">Sistema</h2>
-          </div>
-          <DetailRow label="Código" value={c.code} />
-          <DetailRow label="ID" value={c.id} />
-          <DetailRow label="Actualizado" value={fmt(c.updated_at)} />
-        </div>
-
-        {/* Follow holder */}
-        <div className="rounded-xl border border-dashed border-primary-200 bg-primary-50/50 p-5 flex flex-col items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold text-primary-800 mb-1">Monitorear titular</p>
-            <p className="text-xs text-primary-600">
-              Recibe alertas cuando cambien sus concesiones.
-            </p>
-          </div>
-          <Link
-            href={`/mis-concesiones?ruc=${c.holder_ruc ?? ""}`}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-800 transition"
-          >
-            <User size={12} /> Seguir titular →
-          </Link>
-        </div>
-      </div>
-
-
-      {/* Superposiciones geográficas */}
+      {/* ── Superposiciones ────────────────────────────────────────────── */}
       <OverlapSection concessionId={c.id} code={c.code} />
 
-      {/* SIDEMCAT — se consulta automáticamente */}
+      {/* ── SIDEMCAT ───────────────────────────────────────────────────── */}
       <SidemcatSection concessionId={c.id} code={c.code} concessionQueryKey={id} />
 
-      {/* Expediente Pro — usa caché de sidemcat para saber si hay PDF */}
+      {/* ── Expediente OCR (PRO) ────────────────────────────────────────── */}
       <ExpedienteSectionWrapper concessionId={c.id} />
 
-      {/* Back */}
+      {/* ── Datos técnicos ─────────────────────────────────────────────── */}
+      <details className="mt-4 group">
+        <summary className="flex cursor-pointer items-center gap-2 text-xs text-slate-400 hover:text-slate-600 transition select-none list-none">
+          <ChevronRight size={13} className="transition-transform group-open:rotate-90" />
+          Datos técnicos del sistema
+        </summary>
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-3 text-slate-400">
+              <Hash size={13} /><p className="text-xs font-semibold uppercase tracking-wide">Registro</p>
+            </div>
+            <DetailRow label="Código INGEMMET" value={c.code} />
+            <DetailRow label="ID interno" value={c.id} />
+            <DetailRow label="Fuente" value={c.source} />
+            <DetailRow label="Actualizado" value={fmt(c.updated_at)} />
+          </div>
+          <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-3 text-slate-400">
+              <MapPin size={13} /><p className="text-xs font-semibold uppercase tracking-wide">Ubicación</p>
+            </div>
+            <DetailRow label="Región" value={c.region} />
+            <DetailRow label="Provincia" value={c.province} />
+            <DetailRow label="Distrito" value={c.district} />
+          </div>
+          <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-3 text-slate-400">
+              <Layers size={13} /><p className="text-xs font-semibold uppercase tracking-wide">Concesión</p>
+            </div>
+            <DetailRow label="Tipo" value={c.concession_type} />
+            <DetailRow label="Área exacta" value={c.area_hectares != null ? `${c.area_hectares.toFixed(4)} ha` : null} />
+            <DetailRow label="Titular (RUC)" value={c.holder_ruc} />
+          </div>
+        </div>
+      </details>
+
+      {/* ── Back ───────────────────────────────────────────────────────── */}
       <div className="mt-6">
-        <button
-          onClick={() => router.back()}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
-        >
+        <button onClick={() => router.back()}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition">
           <ArrowLeft size={15} /> Volver
         </button>
       </div>

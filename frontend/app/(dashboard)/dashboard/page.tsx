@@ -11,7 +11,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
-import { SubstanceBadge } from "@/app/(dashboard)/explorar/page";
+import SubstanceBadge from "@/components/ui/SubstanceBadge";
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
 function fmt(iso?: string | null) {

@@ -8,7 +8,7 @@ import {
   Search, SlidersHorizontal, ChevronLeft, ChevronRight,
   TrendingUp, AlertTriangle, Eye, Zap, X,
 } from "lucide-react";
-import { SubstanceBadge } from "@/app/(dashboard)/explorar/page";
+import SubstanceBadge from "@/components/ui/SubstanceBadge";
 
 // ── Tipos de oportunidad ──────────────────────────────────────────────────────
 const OPP_TYPES = [

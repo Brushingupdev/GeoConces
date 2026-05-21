@@ -8,7 +8,7 @@ import {
   Plus, Trash2, ExternalLink, BookmarkCheck,
   ChevronDown, ChevronUp, X,
 } from "lucide-react";
-import { SubstanceBadge } from "@/app/(dashboard)/explorar/page";
+import SubstanceBadge from "@/components/ui/SubstanceBadge";
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Vigente", expired: "Caducada",
