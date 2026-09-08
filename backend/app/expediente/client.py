@@ -16,6 +16,8 @@ import time
 import urllib.request
 from typing import Optional
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 BASE = "https://digital.ingemmet.gob.pe/serviciosdigitales/services/api"
@@ -31,8 +33,9 @@ PHASE_FULL = list(range(2, 11)) + list(range(15, 65)) + list(range(85, 102))  # 
 
 def _ssl_ctx() -> ssl.SSLContext:
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    if not settings.VERIFY_TLS:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
     return ctx
 
 

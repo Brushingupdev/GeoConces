@@ -1,8 +1,16 @@
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
+from pydantic import model_validator
 from typing import List
 
-INSECURE_SECRETS = {"dev-secret-key", "your-secret-key-here", "changeme", "secret", ""}
+INSECURE_SECRETS = {
+    "dev-secret-key",
+    "your-secret-key-here",
+    "REPLACE_ME_WITH_GENERATED_SECRET",
+    "change-me-in-production",
+    "changeme",
+    "secret",
+    "",
+}
 
 
 class Settings(BaseSettings):
@@ -16,6 +24,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     ENVIRONMENT: str = "development"
+    VERIFY_TLS: bool = True
     CORS_ORIGINS: List[str] = ["http://localhost:3000"]
     # Regex permisiva solo en development; en prod queda None.
     CORS_ORIGIN_REGEX: str | None = r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
@@ -42,17 +51,19 @@ class Settings(BaseSettings):
     # Directorio para PDFs y archivos generados
     MEDIA_ROOT: str = "/app/media"
 
-    @field_validator("SECRET_KEY")
-    @classmethod
-    def _validate_secret(cls, v: str, info):
-        env = (info.data.get("ENVIRONMENT") or "development").lower()
-        if env == "production":
-            if not v or v.strip() in INSECURE_SECRETS or len(v) < 32:
+    @model_validator(mode="after")
+    def _validate_security_settings(self):
+        if self.is_production:
+            if (
+                not self.SECRET_KEY
+                or self.SECRET_KEY.strip() in INSECURE_SECRETS
+                or len(self.SECRET_KEY) < 32
+            ):
                 raise ValueError(
                     "SECRET_KEY inseguro en producción: debe tener ≥32 caracteres "
                     "y no ser un placeholder. Genera uno con `python -c \"import secrets; print(secrets.token_urlsafe(48))\"`."
                 )
-        return v
+        return self
 
     @property
     def is_production(self) -> bool:

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import re
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -172,7 +173,8 @@ class PasswordResetConfirm(BaseModel):
     token: str
     new_password: str
 
-_reset_tokens: dict[str, int] = {}   # token → user_id (in-memory, resets on restart)
+RESET_TOKEN_TTL_MINUTES = 30
+_reset_tokens: dict[str, tuple[int, datetime]] = {}
 
 @router.post("/password-reset/request")
 @limiter.limit("3/minute")
@@ -183,24 +185,37 @@ def password_reset_request(request: Request, data: PasswordResetRequest, db: Ses
         # No revelar si el email existe
         return {"message": "Si el email existe, recibirás un enlace de recuperación."}
     token = secrets.token_urlsafe(32)
-    _reset_tokens[token] = user.id
-    # TODO: enviar por email con Resend. Por ahora se devuelve en respuesta para dev.
-    return {
-        "message": "Si el email existe, recibirás un enlace de recuperación.",
-        "dev_token": token,   # ← quitar en producción
-    }
+    _reset_tokens[token] = (
+        user.id,
+        datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_TTL_MINUTES),
+    )
+    response = {"message": "Si el email existe, recibirás un enlace de recuperación."}
+    # Until Resend delivery is wired, expose the token only in development.
+    if not settings.is_production:
+        response["dev_token"] = token
+    return response
 
 @router.post("/password-reset/confirm")
 @limiter.limit("5/minute")
 def password_reset_confirm(request: Request, data: PasswordResetConfirm, db: Session = Depends(get_db)):
-    user_id = _reset_tokens.pop(data.token, None)
-    if not user_id:
+    record = _reset_tokens.pop(data.token, None)
+    if not record:
+        raise HTTPException(status_code=400, detail="Token inválido o expirado")
+    user_id, expires_at = record
+    if datetime.now(timezone.utc) >= expires_at:
         raise HTTPException(status_code=400, detail="Token inválido o expirado")
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    if len(data.new_password) < 8:
-        raise HTTPException(status_code=422, detail="La contraseña debe tener al menos 8 caracteres")
+    if (
+        len(data.new_password) < 8
+        or not re.search(r"[A-Za-z]", data.new_password)
+        or not re.search(r"\d", data.new_password)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="La contraseña debe tener al menos 8 caracteres y contener una letra y un número",
+        )
     user.hashed_password = get_password_hash(data.new_password)
     db.commit()
     return {"message": "Contraseña actualizada correctamente"}

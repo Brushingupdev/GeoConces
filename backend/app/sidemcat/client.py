@@ -25,6 +25,8 @@ from typing import Optional
 
 import httpx
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 BASE = "https://digital.ingemmet.gob.pe/serviciosdigitales/services/api"
@@ -64,7 +66,11 @@ class SIDEMCATClient:
         """Obtiene todos los datos disponibles de SIDEMCAT para un código."""
         code = code.strip().upper()
         try:
-            with httpx.Client(timeout=self._timeout, verify=False, headers=HEADERS) as http:
+            with httpx.Client(
+                timeout=self._timeout,
+                verify=settings.VERIFY_TLS,
+                headers=HEADERS,
+            ) as http:
                 tipo      = self._get(http, f"Consulta/GetTipoDocumentoPorCodigo/{code}")
                 dm        = self._get(http, f"Consulta/GetConsultaDm/2/{code}")
                 enc       = self._get(http, f"Consulta/GetEncabezado/{code}")
@@ -190,7 +196,11 @@ class SIDEMCATClient:
 
     def health_check(self) -> bool:
         try:
-            with httpx.Client(timeout=10.0, verify=False, headers=HEADERS) as http:
+            with httpx.Client(
+                timeout=10.0,
+                verify=settings.VERIFY_TLS,
+                headers=HEADERS,
+            ) as http:
                 resp = http.get(f"{BASE}/Demarcacion/GetDepartamentos")
                 return resp.status_code == 200
         except Exception:

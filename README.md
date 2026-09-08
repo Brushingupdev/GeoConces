@@ -1,157 +1,144 @@
 # GeoConces
 
-SaaS para **gestión y búsqueda de concesiones mineras en Perú** usando información pública de INGEMMET / GEOCATMIN / SIDEMCAT.
+SaaS para gestionar, explorar y monitorear concesiones mineras en Perú con información pública de INGEMMET, GEOCATMIN y SIDEMCAT.
 
----
+![Dashboard de GeoConces](frontend/image/Image.png)
 
-## Arquitectura
+> Estado: MVP funcional / pre-beta. El proyecto está en evolución y algunas integraciones dependen de servicios externos.
 
-- **Frontend:** Next.js 14 + TypeScript + Tailwind CSS + shadcn/ui (estilo) + Leaflet + Zustand + TanStack Query
-- **Backend:** FastAPI + SQLAlchemy + Pydantic
-- **Base de datos:** PostgreSQL + PostGIS
-- **Colas / Cache:** Redis
-- **Tareas:** Celery (preparado)
+## Qué resuelve
 
----
+GeoConces centraliza la búsqueda geográfica y documental de concesiones, permitiendo:
+
+- Explorar concesiones sobre un mapa interactivo.
+- Buscar por código, nombre, titular, región y otros filtros.
+- Consultar el expediente y datos complementarios de SIDEMCAT.
+- Guardar concesiones en listas de seguimiento.
+- Visualizar alertas y resúmenes operativos.
+- Importar datos en CSV, XLSX, GeoJSON o shapefile comprimido.
+- Generar reportes y preparar búsquedas semánticas con embeddings.
+
+## Stack
+
+- Frontend: Next.js 14, TypeScript, Tailwind CSS, shadcn/ui, Leaflet, Zustand y TanStack Query.
+- Backend: FastAPI, SQLAlchemy, Pydantic y Celery.
+- Datos: PostgreSQL con PostGIS y pgvector.
+- Infraestructura local: Docker Compose y Redis.
 
 ## Requisitos
 
-- Docker + Docker Compose
-- Node.js 20+ (solo si corres el frontend fuera de Docker)
-- Python 3.11+ (solo si corres el backend fuera de Docker)
+- Docker y Docker Compose.
+- Node.js 20+ si ejecutas el frontend fuera de Docker.
+- Python 3.11+ si ejecutas el backend fuera de Docker.
 
----
+## Inicio rápido
 
-## Levantar el proyecto (desarrollo)
-
-```bash
-# 1. Posicionarte en la raíz del proyecto
-cd GeoConces
-
-# 2. Levantar base, redis y backend
+~~~bash
+# Desde la raíz del repositorio
 docker compose up --build db redis backend
 
-# 3. En otra terminal, correr el frontend local
+# En otra terminal
 cd frontend
+npm install
 npm run dev
+~~~
 
-# 4. Opcional: sembrar datos demo
-cd ../backend
-docker compose exec backend python scripts/seed.py
-```
+Servicios:
 
-Si quieres levantar también el frontend dentro de Docker:
+- Frontend: http://localhost:3000
+- API: http://localhost:8000
+- Swagger: http://localhost:8000/docs
+- PostgreSQL: localhost:5432
+- Redis: localhost:6379
 
-```bash
+Para levantar el frontend dentro de Docker:
+
+~~~bash
 docker compose --profile fullstack up --build
-```
+~~~
 
-Servicios disponibles:
+Para cargar datos demo:
 
-- **Frontend:** http://localhost:3000
-- **Backend API:** http://localhost:8000
-- **API Docs (Swagger):** http://localhost:8000/docs
-- **PostgreSQL:** localhost:5432
-- **Redis:** localhost:6379
+~~~bash
+docker compose exec backend python scripts/seed.py
+~~~
 
----
+## Configuración y seguridad
+
+1. Copia .env.example a .env y backend/.env.example a backend/.env cuando corresponda.
+2. Genera un SECRET_KEY aleatorio de al menos 32 caracteres.
+3. Mantén VERIFY_TLS=true en entornos reales.
+4. No subas archivos .env, credenciales, tokens, media/, storage/ ni bases de datos locales.
+
+El flujo de recuperación de contraseña usa tokens de un solo uso con expiración de 30 minutos. En desarrollo el token se devuelve para facilitar pruebas; en producción debe conectarse a un proveedor de correo antes de habilitar el flujo para usuarios finales.
 
 ## Base de datos y migraciones
 
-Usa Alembic como flujo principal de esquema.
+Alembic es la fuente de verdad del esquema:
 
-```bash
+~~~bash
 cd backend
 alembic upgrade head
-```
+~~~
 
-Si estás usando Docker para el backend, no hace falta correr ese comando a mano: `docker compose` ya ejecuta `alembic upgrade head` antes de iniciar FastAPI.
+El backend ejecuta las migraciones durante el arranque de Docker. AUTO_CREATE_TABLES permanece desactivado por defecto.
 
-Si por alguna razón quieres que FastAPI cree tablas automáticamente al arrancar, activa `AUTO_CREATE_TABLES=true` en tu entorno. Por defecto está desactivado.
+## Importar concesiones
 
----
-
-## Importar concesiones reales
-
-Puedes cargar archivos `CSV`, `XLSX`, `GeoJSON` o shapefile comprimido en `.zip` usando el mismo pipeline de ingestión del backend.
-
-```bash
+~~~bash
 cd backend
 python scripts/import_concessions.py /ruta/al/archivo.csv
 python scripts/import_concessions.py /ruta/al/archivo.geojson --source geocatmin
 python scripts/import_concessions.py /ruta/al/archivo.zip --source shapefile --import-type bulk_sync
-```
+~~~
 
-También existe endpoint autenticado:
+También están disponibles los endpoints autenticados:
 
-```bash
-POST /ingestion/concessions/upload
-```
-
-Y para revisar historial de importaciones:
-
-```bash
-GET /ingestion/logs
-```
-
----
+- POST /ingestion/concessions/upload
+- GET /ingestion/logs
 
 ## Estructura
 
-```
+~~~text
 GeoConces/
 ├── docker-compose.yml
 ├── .env.example
 ├── backend/
 │   ├── app/
-│   │   ├── core/          # config, db, security
-│   │   ├── auth/          # login, registro, JWT
-│   │   ├── users/         # perfil
-│   │   ├── concessions/   # concesiones
-│   │   ├── maps/          # endpoints de mapa (PostGIS)
-│   │   ├── watchlists/    # listas de seguimiento
-│   │   ├── alerts/        # alertas
-│   │   └── models.py      # modelos SQLAlchemy
-│   ├── main.py
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   └── scripts/seed.py
+│   │   ├── auth/          # registro, login y JWT
+│   │   ├── concessions/   # búsqueda y detalle
+│   │   ├── maps/          # endpoints geográficos
+│   │   ├── sidemcat/      # integración documental
+│   │   ├── alerts/        # alertas y seguimiento
+│   │   ├── core/          # configuración, DB y seguridad
+│   │   └── models.py
+│   ├── alembic/
+│   ├── scripts/
+│   └── requirements.txt
 └── frontend/
     ├── app/
-    │   ├── (public)/      # landing
-    │   ├── (auth)/        # login, registro
-    │   └── (dashboard)/   # dashboard, mapa, explorar, watchlist, alertas
     ├── components/
-    │   └── maps/PeruMap.tsx
-    ├── lib/api.ts
-    └── store/auth.ts
-```
+    ├── lib/
+    └── store/
+~~~
 
----
+## Validación local
 
-## Funcionalidades del MVP (Fase 1)
+~~~bash
+cd frontend
+npm run build
 
-- Registro e inicio de sesión con JWT
-- Dashboard con resumen
-- Mapa interactivo de concesiones con Leaflet + PostGIS
-- Búsqueda por código, nombre, titular y región
-- Perfil de concesión básico
-- Watchlist (guardar concesiones)
-- Alertas básicas
+cd ../backend
+alembic check
+~~~
 
----
+## Límites actuales
 
-## Próximos pasos (Fase 2)
-
-- Parser de SIDEMCAT (pagos, expedientes)
-- Historial de cambios
-- Reportes PDF / Excel
-- Detección de oportunidades (vencimientos, libre denunciabilidad)
-- Integración de pagos (Culqi)
-- Notificaciones por email y WhatsApp
-
----
+- La sincronización con fuentes externas depende de la disponibilidad y el formato de INGEMMET/SIDEMCAT.
+- El envío de recuperación por email requiere configurar Resend.
+- Pagos, notificaciones avanzadas y parte de la analítica comercial siguen en desarrollo.
+- Antes de una puesta en producción conviene completar pruebas end-to-end, observabilidad y revisión de aislamiento multiempresa.
 
 ## Licencia
 
-Privado / Propietario
+Código propietario. El repositorio público se mantiene para revisión y colaboración controlada; no se concede una licencia de uso, modificación o redistribución sin autorización expresa.

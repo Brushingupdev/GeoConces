@@ -30,6 +30,7 @@ def generate_embeddings_batch(self, batch_size: int = 500):
     db = SessionLocal()
     try:
         total_updated = 0
+        total_failed = 0
         while True:
             rows = (
                 db.query(Concession)
@@ -40,21 +41,36 @@ def generate_embeddings_batch(self, batch_size: int = 500):
             if not rows:
                 break
 
+            successful = 0
+            failed = 0
             for c in rows:
                 try:
                     text = build_concession_text(c)
                     c.embedding = encode_text(text)
                     time.sleep(0.05)  # ~20 req/s, bien bajo el límite de Gemini
+                    successful += 1
                 except Exception as exc:
+                    failed += 1
                     log.warning("Embedding failed for %s: %s", c.code, exc)
                     continue
 
             db.commit()
-            total_updated += len(rows)
-            log.info("Embeddings generados: %d acumulados", total_updated)
+            total_updated += successful
+            total_failed += failed
+            log.info(
+                "Embeddings generados en el lote: %d (%d fallidos)",
+                successful,
+                failed,
+            )
+
+            # Failed rows remain NULL. Stop if an entire batch failed instead
+            # of retrying the same rows forever in a worker process.
+            if successful == 0:
+                log.error("Ningún embedding generado en el último lote; deteniendo")
+                break
 
         log.info("generate_embeddings_batch completado: %d concesiones", total_updated)
-        return {"updated": total_updated}
+        return {"updated": total_updated, "failed": total_failed}
     except Exception as exc:
         db.rollback()
         log.error("generate_embeddings_batch falló: %s", exc)
