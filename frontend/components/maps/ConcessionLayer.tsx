@@ -1,8 +1,7 @@
 "use client";
 
-import { Marker, Popup } from "react-leaflet";
+import { Marker } from "react-leaflet";
 import L from "leaflet";
-import ConcessionPopup from "@/components/maps/ConcessionPopup";
 import type { ConcessionMapFeature } from "@/types/concessions";
 
 // Color per status for the selected marker
@@ -63,11 +62,7 @@ export default function ConcessionLayer({
             icon={icon}
             zIndexOffset={isSelected ? 1000 : 0}
             eventHandlers={{ click: () => onSelect(feature) }}
-          >
-            <Popup>
-              <ConcessionPopup feature={feature} />
-            </Popup>
-          </Marker>
+          />
         );
       })}
     </>

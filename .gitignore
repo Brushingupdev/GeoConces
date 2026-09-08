@@ -26,3 +26,11 @@ Thumbs.db
 # DB
 *.sqlite3
 pg_data/
+
+# Local runtime data and generated artifacts
+backend/media/
+backend/storage/
+backend/celerybeat-schedule
+frontend/.next-local/
+frontend/tsconfig.tsbuildinfo
+*Zone.Identifier
